@@ -113,25 +113,20 @@ def add_title(title, size, pixels, multiplier):
             for j in range(multiplier):
                 px[x_start + (x * multiplier + i), y * multiplier + j] = color
 
-    total_width = sum((len(get_char(c)[0]) * multiplier if c != ' ' else 4 * multiplier) for c in title)
-    start_pos = (size[0] - total_width) // 2 - multiplier
-    print(total_width)
-    print(start_pos)
+    total_width = sum((len(get_char(c)[0]) * multiplier if c != ' ' else 4 * multiplier) + multiplier for c in title) - multiplier
+    start_pos = (size[0] - total_width) // 2
 
-    i = 0
     current_pos = start_pos
     for char in title:
-        i += 1
-
         if char != " ":
             char_matrix = get_char(char)
             for x in range(len(char_matrix[0])):
                 for y in range(len(char_matrix)):
                     set_pixel_multiplied(pixels, current_pos, x, y + len(char_matrix) + 1, char_matrix[y][x])
-
-            current_pos += (len(char_matrix[0]) + 1) * multiplier
+            current_pos += len(char_matrix[0]) * multiplier + multiplier
         else:
             current_pos += 4 * multiplier
+
 
 def get_char(char: str):
     char = ALPHABET[char.upper()]
