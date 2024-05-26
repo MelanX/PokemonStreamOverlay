@@ -1,5 +1,6 @@
 import json
 import os
+import sys
 
 from PIL import Image
 from PIL.Image import Resampling, Transpose
@@ -7,7 +8,6 @@ from PIL.Image import Resampling, Transpose
 WHITE = (255, 235, 255, 255)
 BLACK = (0, 0, 0, 255)
 TRANS = (0, 0, 0, 0)
-
 
 TOP_LEFT_CORNER = [
     [None, None, BLACK, BLACK, None, None, None],
@@ -135,15 +135,85 @@ def get_char(char: str):
     return [[tuple(pixel) if pixel is not None else None for pixel in row] for row in char]
 
 
-def copy(base_img: Image, overlay: str, pos: tuple, rotation: int = 0, scale: float = 0, flip: bool = False):
+def load_pokedex_entry(id: int):
+    file = f'pokedex/{id:03d}.png'
+    if os.path.exists(file):
+        return file
+
+    if not os.path.exists('pokedex'):
+        os.mkdir('pokedex')
+
+    print(f'Trying to download pokedex entry {id}')
+    import requests
+    from bs4 import BeautifulSoup
+    url = f'https://www.pokewiki.de/Datei:Hauptartwork_{id:03d}.png'
+    response = requests.get(url)
+    response.raise_for_status()
+
+    soup = BeautifulSoup(response.text, 'html.parser')
+    div = soup.find('div', class_='fullImageLink')
+    if div:
+        a_tag = div.find('a')
+        if a_tag and 'href' in a_tag.attrs:
+            img_url = 'https://www.pokewiki.de/' + a_tag['href']
+            img_response = requests.get(img_url)
+            img_response.raise_for_status()
+
+            with open(file, 'wb') as f:
+                f.write(img_response.content)
+
+            print(f'Successfully downloaded {id}.png')
+            return file
+        else:
+            print('No a tag or href attribute found')
+    else:
+        print('No div with class "fullImageLink" found')
+
+    return None
+
+
+def copy(base_img: Image, overlay, pos: tuple, rotation: int = 0, scale: float = 0, max_height: int = 0,
+         max_width: int = 0, max_size: int = 0,
+         flip: bool = False):
     temp_img = Image.new('RGBA', base_img.size, TRANS)
-    overlay_img = Image.open(overlay)
+    if type(overlay) is str:
+        overlay_img = Image.open(overlay)
+    else:
+        pokemon = load_pokedex_entry(overlay)
+        if pokemon is None:
+            return
+
+        overlay_img = Image.open(pokemon)
 
     if rotation != 0:
         overlay_img = overlay_img.rotate(rotation, resample=Resampling.BICUBIC, expand=True)
 
     if scale != 0:
-        overlay_img = overlay_img.resize((int(overlay_img.size[0] * scale), int(overlay_img.size[1] * scale)), Resampling.BOX)
+        overlay_img = overlay_img.resize((int(overlay_img.size[0] * scale), int(overlay_img.size[1] * scale)),
+                                         Resampling.BOX)
+
+    if max_size == 0:
+        if max_height != 0 and max_width != 0:
+            raise ValueError("Specify either max_height or max_width, not both.")
+        elif max_height != 0:
+            overlay_img = overlay_img.resize(
+                (int((max_height / overlay_img.size[1]) * overlay_img.size[0]), max_height),
+                Image.Resampling.BOX)
+        elif max_width != 0:
+            overlay_img = overlay_img.resize(
+                (max_width, int((max_width / overlay_img.size[0]) * overlay_img.size[1])),
+                Image.Resampling.BOX)
+    else:
+        # Assuming max_size is for the larger dimension
+        width, height = overlay_img.size
+        if width > height:
+            overlay_img = overlay_img.resize(
+                (max_size, int((max_size / width) * height)),
+                Image.Resampling.BOX)
+        else:
+            overlay_img = overlay_img.resize(
+                (int((max_size / height) * width), max_size),
+                Image.Resampling.BOX)
 
     if flip:
         overlay_img = overlay_img.transpose(Transpose.FLIP_LEFT_RIGHT)
@@ -163,6 +233,9 @@ def add_pkmn_slots(img: Image, pos: tuple):
 
 if __name__ == '__main__':
     if os.path.exists("config.json"):
+        pkmn = None
+        if len(sys.argv) > 1:
+            pkmn = int(sys.argv[1])
         with open("config.json", "r", encoding="utf-8") as f:
             config = json.load(f)
 
@@ -193,8 +266,14 @@ if __name__ == '__main__':
             draw_frame(size, panelPx, multiplier)
             img.paste(panelImg, (panel['pos'][0] - (5 * multiplier), panel['pos'][1] - (5 * multiplier)))
 
-        img = copy(img, "pokemon/logo.png", (-50, -80), rotation=15)
-        img = copy(img, "pokemon/turtok.png", (-20, 800), scale=0.5, flip=True)
+        logo = "pokemon/logo.png"
+        if os.path.exists(logo):
+            img = copy(img, logo, (-50, -80), rotation=15)
+        else:
+            print('If you want to have the Pokémon logo on your overlay, you need to download it (e.g. here: ' +
+                  'https://upload.wikimedia.org/wikipedia/commons/thumb/9/98/International_Pok%C3%A9mon_logo.svg/640px-International_Pok%C3%A9mon_logo.svg.png)\n' +
+                  f'Save it here: {logo}')
+        img = copy(img, pkmn if pkmn else 9, (-20, 800), max_height=300, flip=True)
 
         img = add_pkmn_slots(img, (275, 875))
 

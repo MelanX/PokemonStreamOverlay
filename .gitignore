@@ -1,3 +1,6 @@
 .venv
 .idea
 *.png
+!pokemon/slot.png
+!examples/**/*
+secret.json
