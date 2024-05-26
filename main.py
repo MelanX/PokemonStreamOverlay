@@ -1,6 +1,8 @@
 import json
+import os
 
 from PIL import Image
+from PIL.Image import Resampling, Transpose
 
 WHITE = (255, 235, 255, 255)
 BLACK = (0, 0, 0, 255)
@@ -133,22 +135,85 @@ def get_char(char: str):
     return [[tuple(pixel) if pixel is not None else None for pixel in row] for row in char]
 
 
+def copy(base_img: Image, overlay: str, pos: tuple, rotation: int = 0, scale: float = 0, flip: bool = False):
+    temp_img = Image.new('RGBA', base_img.size, TRANS)
+    overlay_img = Image.open(overlay)
+
+    if rotation != 0:
+        overlay_img = overlay_img.rotate(rotation, resample=Resampling.BICUBIC, expand=True)
+
+    if scale != 0:
+        overlay_img = overlay_img.resize((int(overlay_img.size[0] * scale), int(overlay_img.size[1] * scale)), Resampling.BOX)
+
+    if flip:
+        overlay_img = overlay_img.transpose(Transpose.FLIP_LEFT_RIGHT)
+
+    temp_img.paste(overlay_img, pos)
+    return Image.alpha_composite(base_img, temp_img)
+
+
+def add_pkmn_slots(img: Image, pos: tuple):
+    scale = 9
+    for i in range(0, 6):
+        img = copy(img, 'pokemon/slot.png', pos, scale=scale)
+        pos = (pos[0] + 16 * scale, pos[1])
+
+    return img
+
+
 if __name__ == '__main__':
-    original_size = (int(input("x=")), int(input("y=")))
-    image_name = f'frame{original_size[0]}x{original_size[1]}.png'
-    multiplier = input("multiplier (default 4)=")
-    multiplier = 4 if multiplier == "" else int(multiplier)
-    size = (original_size[0] + (10 * multiplier), original_size[1] + (10 * multiplier))
-    img = Image.new('RGBA', size, TRANS)
-    pixels = img.load()
-    if input("Fill? (y/N) ").lower() == "y":
-        fill(pixels, original_size, size)
+    if os.path.exists("config.json"):
+        with open("config.json", "r", encoding="utf-8") as f:
+            config = json.load(f)
 
-    title = input("Title: ")
-    if title != "":
-        add_title(title, size, pixels, multiplier)
-        image_name = f'{title}.png'
+        img = Image.new('RGBA', (config['size'][0], config['size'][1]), TRANS)
+        pixels = img.load()
+        for panel in config['panels']:
+            original_size = (panel['size'][0], panel['size'][1])
+            multiplier = 4
+            if 'multiplier' in panel:
+                multiplier = int(panel['multiplier'])
+            title = ""
+            if 'title' in panel:
+                title = panel['title']
+            filled = True
+            if 'filled' in panel:
+                filled = panel['filled']
 
-    draw_frame(size, pixels, multiplier)
+            size = (original_size[0] + (10 * multiplier), original_size[1] + (10 * multiplier))
+            panelImg = Image.new('RGBA', size, TRANS)
+            panelPx = panelImg.load()
 
-    img.save(image_name)
+            if filled:
+                fill(panelPx, original_size, size)
+
+            if title:
+                add_title(panel['title'], size, panelPx, multiplier)
+
+            draw_frame(size, panelPx, multiplier)
+            img.paste(panelImg, (panel['pos'][0] - (5 * multiplier), panel['pos'][1] - (5 * multiplier)))
+
+        img = copy(img, "pokemon/logo.png", (-50, -80), rotation=15)
+        img = copy(img, "pokemon/turtok.png", (-20, 800), scale=0.5, flip=True)
+
+        img = add_pkmn_slots(img, (275, 875))
+
+        img.save('overlay.png')
+    else:
+        original_size = (int(input("x=")), int(input("y=")))
+        image_name = f'frame{original_size[0]}x{original_size[1]}.png'
+        multiplier = input("multiplier (default 4)=")
+        multiplier = 4 if multiplier == "" else int(multiplier)
+        size = (original_size[0] + (10 * multiplier), original_size[1] + (10 * multiplier))
+        img = Image.new('RGBA', size, TRANS)
+        pixels = img.load()
+        if input("Fill? (y/N) ").lower() == "y":
+            fill(pixels, original_size, size)
+
+        title = input("Title: ")
+        if title != "":
+            add_title(title, size, pixels, multiplier)
+            image_name = f'{title}.png'
+
+        draw_frame(size, pixels, multiplier)
+        img.save(image_name)
